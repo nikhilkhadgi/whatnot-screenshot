@@ -1,0 +1,8 @@
+{
+  "name": "whatnot-screenshot-extension",
+  "version": "1.0.0",
+  "description": "Chrome extension that automatically takes screenshots when bid buttons become available on Whatnot auctions",
+  "scripts": {
+    "build": "echo 'No build process needed for this extension'"
+  }
+}
