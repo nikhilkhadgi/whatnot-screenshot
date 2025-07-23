@@ -74,7 +74,11 @@ monitoringToggle.addEventListener('change', async () => {
     await chrome.storage.local.set({ isMonitoring });
     
     if (isMonitoring) {
-      // Start monitoring
+      // Start monitoring - inject both functions
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: stopScreenshotMonitoring
+      });
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: startScreenshotMonitoring
@@ -170,7 +174,49 @@ resetCounterBtn.addEventListener('click', async () => {
 });
 
 // Injected functions for content script
+function stopScreenshotMonitoring() {
+  if (window.stopScreenshotMonitoring) {
+    window.stopScreenshotMonitoring();
+  } else {
+    // Fallback if the window function doesn't exist
+    window._screenshotMonitorRunning = false;
+    
+    if (window._screenshotTimeout) {
+      clearTimeout(window._screenshotTimeout);
+      window._screenshotTimeout = null;
+    }
+    
+    if (window._screenshotMutationObserver) {
+      window._screenshotMutationObserver.disconnect();
+      window._screenshotMutationObserver = null;
+    }
+    
+    console.log('[Screenshot Monitor] Monitoring stopped (fallback)');
+  }
+}
+
 function startScreenshotMonitoring() {
+  // Define stop function locally to ensure it's always available
+  function stopScreenshotMonitoring() {
+    window._screenshotMonitorRunning = false;
+    
+    // Clear any pending screenshot timeout
+    if (window._screenshotTimeout) {
+      clearTimeout(window._screenshotTimeout);
+      window._screenshotTimeout = null;
+    }
+    
+    if (window._screenshotMutationObserver) {
+      window._screenshotMutationObserver.disconnect();
+      window._screenshotMutationObserver = null;
+    }
+    
+    console.log('[Screenshot Monitor] Monitoring stopped');
+  }
+  
+  // Make stop function globally available for external calls
+  window.stopScreenshotMonitoring = stopScreenshotMonitoring;
+  
   // Stop any existing monitoring first
   if (window._screenshotMonitorRunning) {
     stopScreenshotMonitoring();
@@ -184,6 +230,7 @@ function startScreenshotMonitoring() {
   console.log('[Screenshot Monitor] Starting bid button detection...');
   
   const COOLDOWN_MS = 2000; // 2 second cooldown
+  const SCREENSHOT_DELAY_MS = 1000; // 1 second delay before taking screenshot
   const BID_SELECTORS = [
     'button[data-cy="bid_button"]',
     'button[data-cy="custom_bid_button"]'
@@ -196,46 +243,73 @@ function startScreenshotMonitoring() {
       return false;
     }
     
-    // Extract product order number from the pinned product element
-    let productNumber = 'unknown';
-    try {
-      const pinnedProductElement = document.querySelector('div[data-cy="pinned_product"]');
-      if (pinnedProductElement) {
-        const textContent = pinnedProductElement.textContent || '';
-        // Look for pattern like "#157" or "#123"
-        const match = textContent.match(/#(\d+)/);
-        if (match && match[1]) {
-          productNumber = match[1];
-          console.log('[Screenshot Monitor] Found product number:', productNumber);
+    // Clear any existing timeout
+    if (window._screenshotTimeout) {
+      clearTimeout(window._screenshotTimeout);
+    }
+    
+    // Set up 1-second delay before taking screenshot
+    window._screenshotTimeout = setTimeout(() => {
+      // Check if monitoring is still active and button still exists
+      if (!window._screenshotMonitorRunning) {
+        console.log('[Screenshot Monitor] Monitoring stopped, cancelling delayed screenshot');
+        return;
+      }
+      
+      // Double-check button still exists before taking screenshot
+      let buttonExists = false;
+      for (const selector of BID_SELECTORS) {
+        if (document.querySelector(selector)) {
+          buttonExists = true;
+          break;
         }
       }
-    } catch (error) {
-      console.error('[Screenshot Monitor] Error extracting product number:', error);
-    }
-    
-    window._lastScreenshotTime = now;
-    console.log(`[Screenshot Monitor] Taking screenshot - trigger: ${triggerType}, product: ${productNumber}`);
-    
-    // Check if chrome.runtime is available before sending message
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
-      // Send message to background script with product number
-      chrome.runtime.sendMessage({
-        type: "takeScreenshot",
-        triggerType: triggerType,
-        productNumber: productNumber
-      }).catch(error => {
-        console.error('[Screenshot Monitor] Failed to send screenshot message:', error);
-        // Try to reinitialize monitoring if extension context is lost
-        if (error.message && error.message.includes('context invalidated')) {
-          console.log('[Screenshot Monitor] Extension context invalidated, stopping monitoring');
-          stopScreenshotMonitoring();
+      
+      if (!buttonExists && triggerType !== 'manual') {
+        console.log('[Screenshot Monitor] Button no longer exists, cancelling delayed screenshot');
+        return;
+      }
+      
+      // Extract product order number from the pinned product element
+      let productNumber = 'unknown';
+      try {
+        const pinnedProductElement = document.querySelector('div[data-cy="pinned_product"]');
+        if (pinnedProductElement) {
+          const textContent = pinnedProductElement.textContent || '';
+          // Look for pattern like "#157" or "#123"
+          const match = textContent.match(/#(\d+)/);
+          if (match && match[1]) {
+            productNumber = match[1];
+            console.log('[Screenshot Monitor] Found product number:', productNumber);
+          }
         }
-      });
-    } else {
-      console.error('[Screenshot Monitor] Chrome runtime not available - extension context may be invalidated');
-      stopScreenshotMonitoring();
-      return false;
-    }
+      } catch (error) {
+        console.error('[Screenshot Monitor] Error extracting product number:', error);
+      }
+      
+      window._lastScreenshotTime = Date.now();
+      console.log(`[Screenshot Monitor] Taking delayed screenshot (1s) - trigger: ${triggerType}, product: ${productNumber}`);
+      
+      // Check if chrome.runtime is available before sending message
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
+        // Send message to background script with product number
+        chrome.runtime.sendMessage({
+          type: "takeScreenshot",
+          triggerType: triggerType,
+          productNumber: productNumber
+        }).catch(error => {
+          console.error('[Screenshot Monitor] Failed to send screenshot message:', error);
+          // Try to reinitialize monitoring if extension context is lost
+          if (error.message && error.message.includes('context invalidated')) {
+            console.log('[Screenshot Monitor] Extension context invalidated, stopping monitoring');
+            stopScreenshotMonitoring();
+          }
+        });
+      } else {
+        console.error('[Screenshot Monitor] Chrome runtime not available - extension context may be invalidated');
+        stopScreenshotMonitoring();
+      }
+    }, SCREENSHOT_DELAY_MS);
     
     return true;
   }
@@ -298,16 +372,5 @@ function startScreenshotMonitoring() {
   checkForBidButtons();
   
   console.log('[Screenshot Monitor] Monitoring started with selectors:', BID_SELECTORS);
-}
-
-function stopScreenshotMonitoring() {
-  window._screenshotMonitorRunning = false;
-  
-  if (window._screenshotMutationObserver) {
-    window._screenshotMutationObserver.disconnect();
-    window._screenshotMutationObserver = null;
-  }
-  
-  console.log('[Screenshot Monitor] Monitoring stopped');
 }
 

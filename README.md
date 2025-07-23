@@ -9,6 +9,7 @@ A Chrome extension that automatically takes screenshots when bid buttons become 
 - **Screenshot Management**: 
   - Sequential naming: `whatnot-auction-0001-trigger.png`, `whatnot-auction-0002-trigger.png`, etc.
   - Trigger types: `auto`, `manual`, `state-transition`
+  - 1-second delay before taking screenshots (prevents accidental triggers)
   - 2-second cooldown between automatic screenshots
 - **User Interface**:
   - Start/Stop monitoring toggle (starts OFF by default)
@@ -36,7 +37,7 @@ A Chrome extension that automatically takes screenshots when bid buttons become 
 
 **Automatic Monitoring**:
 - Monitors DOM changes using MutationObserver (same as auto-bidder)
-- Takes screenshots when bid buttons become available
+- Waits 1 second after bid buttons appear before taking screenshots
 - Includes 2-second cooldown to prevent spam
 - Only works on whatnot.com pages
 
@@ -105,7 +106,7 @@ const BID_SELECTORS = [
 - Try manual screenshot first
 
 **Too many screenshots?**
-- 2-second cooldown should prevent spam
+- 1-second delay + 2-second cooldown should prevent spam
 - Stop monitoring when not needed
 - Reset counter to clean up
 

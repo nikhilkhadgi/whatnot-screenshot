@@ -10,8 +10,14 @@ chrome.runtime.onStartup.addListener(async () => {
 // Listen for messages from content script and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "takeScreenshot") {
-    handleScreenshot(sender.tab.id, message.triggerType, message.productNumber);
-    sendResponse({ success: true });
+    // Check if sender.tab exists and has an id
+    if (sender && sender.tab && sender.tab.id) {
+      handleScreenshot(sender.tab.id, message.triggerType, message.productNumber);
+      sendResponse({ success: true });
+    } else {
+      console.error('[Background] No valid tab ID provided for screenshot');
+      sendResponse({ success: false, error: 'No valid tab ID' });
+    }
     return true;
   }
   
