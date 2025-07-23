@@ -15,8 +15,14 @@ async function takeCanvasScreenshot(productNumber = 'unknown') {
         // --- Step 2: Find video element on the page ---
         let video = document.querySelector('video');
         if (!video) {
-            console.error('[Canvas Screenshot] No video element found on the page.');
-            throw new Error('No video element found. Canvas screenshot requires a video element.');
+            console.warn('[Canvas Screenshot] No video element found on the page. Stream may have ended.');
+            // Return a special error code to indicate stream has ended
+            return {
+                success: false,
+                error: 'NO_VIDEO_ELEMENT',
+                streamEnded: true,
+                message: 'No video element found. Live stream may have ended.'
+            };
         }
 
         console.log('[Canvas Screenshot] Found video element:', video);
@@ -90,50 +96,88 @@ async function takeCanvasScreenshot(productNumber = 'unknown') {
             try {
                 overlayRenderedCanvas = await html2canvas(overlayElement, {
                     backgroundColor: null,     // Makes background transparent
-                    useCORS: false,           // Disable CORS to avoid blocked images
-                    allowTaint: true,         // Allow cross-origin images (will taint canvas)
+                    useCORS: false,           // Disable CORS to avoid blocked resources
+                    allowTaint: true,         // Allow cross-origin content to taint canvas
                     logging: false,           // Reduce html2canvas console output
                     scale: 1,                 // Maintain original scale
-                    foreignObjectRendering: false, // Disable foreign object rendering
-                    imageTimeout: 5000,       // 5 second timeout for images
+                    foreignObjectRendering: false, // Disable foreign object rendering (CSP friendly)
+                    imageTimeout: 1000,       // Short timeout for images
+                    proxy: null,              // Disable proxy usage
+                    removeContainer: true,    // Clean up temporary containers
+                    width: Math.min(overlayElement.offsetWidth || 500, 500),  // Limit width
+                    height: Math.min(overlayElement.offsetHeight || 300, 300), // Limit height
                     ignoreElements: (element) => {
-                        // Skip elements that might cause CORS issues
-                        if (element.tagName === 'IMG') {
+                        const tagName = element.tagName.toLowerCase();
+                        
+                        // Skip problematic elements that might cause CSP issues
+                        if (tagName === 'script' || tagName === 'style' || tagName === 'link') {
+                            return true;
+                        }
+                        
+                        // Skip images from external domains
+                        if (tagName === 'img') {
                             const src = element.src || '';
-                            // Skip images from external domains that might cause CORS issues
                             if (src.includes('images.whatnot.com') || 
                                 src.includes('cdn.') || 
-                                src.includes('amazonaws.com')) {
-                                console.log('[Canvas Screenshot] Skipping potentially problematic image:', src);
+                                src.includes('amazonaws.com') ||
+                                src.startsWith('data:') === false) {
+                                console.log('[Canvas Screenshot] Skipping external image:', src);
                                 return true;
                             }
                         }
+                        
+                        // Skip video elements
+                        if (tagName === 'video' || tagName === 'iframe' || tagName === 'embed') {
+                            return true;
+                        }
+                        
                         return false;
                     }
                 });
                 console.log('[Canvas Screenshot] Overlay element successfully rendered by html2canvas.');
             } catch (error) {
                 console.error("[Canvas Screenshot] Error rendering overlay with html2canvas:", error);
-                console.warn("[Canvas Screenshot] Trying fallback configuration...");
+                console.warn("[Canvas Screenshot] Trying minimal fallback configuration...");
                 
-                // Try a more aggressive fallback configuration
+                // Try a minimal fallback configuration that avoids most CSP issues
                 try {
-                    overlayRenderedCanvas = await html2canvas(overlayElement, {
+                    // Create a simplified clone of the element with just text content
+                    const clonedElement = overlayElement.cloneNode(true);
+                    
+                    // Remove all potentially problematic elements from the clone
+                    const problematicSelectors = ['img', 'video', 'script', 'style', 'link', 'iframe', 'embed'];
+                    problematicSelectors.forEach(selector => {
+                        const elements = clonedElement.querySelectorAll(selector);
+                        elements.forEach(el => el.remove());
+                    });
+                    
+                    // Temporarily append to body for rendering
+                    clonedElement.style.position = 'absolute';
+                    clonedElement.style.left = '-9999px';
+                    clonedElement.style.top = '-9999px';
+                    document.body.appendChild(clonedElement);
+                    
+                    overlayRenderedCanvas = await html2canvas(clonedElement, {
                         backgroundColor: null,
                         useCORS: false,
                         allowTaint: true,
                         logging: false,
                         scale: 1,
                         foreignObjectRendering: false,
-                        imageTimeout: 1000,
-                        ignoreElements: (element) => {
-                            // Skip all images to avoid CORS issues
-                            return element.tagName === 'IMG' || element.tagName === 'VIDEO';
-                        }
+                        imageTimeout: 500,
+                        proxy: null,
+                        removeContainer: true,
+                        width: Math.min(overlayElement.offsetWidth || 300, 300),
+                        height: Math.min(overlayElement.offsetHeight || 200, 200),
+                        ignoreElements: () => false // Don't ignore anything in the cleaned clone
                     });
-                    console.log('[Canvas Screenshot] Overlay rendered with fallback configuration (images skipped).');
+                    
+                    // Remove the temporary clone
+                    document.body.removeChild(clonedElement);
+                    
+                    console.log('[Canvas Screenshot] Overlay rendered with minimal fallback configuration.');
                 } catch (fallbackError) {
-                    console.error("[Canvas Screenshot] Fallback rendering also failed:", fallbackError);
+                    console.error("[Canvas Screenshot] Minimal fallback rendering also failed:", fallbackError);
                     console.warn("[Canvas Screenshot] Continuing without overlay...");
                     overlayRenderedCanvas = null;
                 }

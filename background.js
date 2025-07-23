@@ -60,6 +60,39 @@ async function handleScreenshot(tabId, triggerType = 'auto', productNumber = 'un
     const screenshotResult = result[0]?.result;
     
     if (!screenshotResult || !screenshotResult.success) {
+      // Check if this is a "stream ended" scenario
+      if (screenshotResult && screenshotResult.streamEnded) {
+        console.log('[Canvas Screenshot] Stream has ended, stopping monitoring...');
+        
+        // Stop monitoring by injecting the stop function
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+              if (window.stopScreenshotMonitoring) {
+                window.stopScreenshotMonitoring();
+                console.log('[Screenshot Monitor] Monitoring stopped due to stream end.');
+              }
+            }
+          });
+          
+          // Update monitoring state in storage
+          await chrome.storage.local.set({ isMonitoring: false });
+          
+          // Show notification about stream end
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icon48.png',
+            title: 'Stream Ended',
+            message: 'Live stream has ended. Screenshot monitoring stopped.'
+          });
+          
+          return; // Exit without throwing error
+        } catch (stopError) {
+          console.error('[Canvas Screenshot] Failed to stop monitoring:', stopError);
+        }
+      }
+      
       throw new Error(screenshotResult?.error || 'Canvas screenshot failed');
     }
     

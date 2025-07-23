@@ -256,6 +256,14 @@ function startScreenshotMonitoring() {
         return;
       }
       
+      // Check if video element still exists (stream still active)
+      const videoElement = document.querySelector('video');
+      if (!videoElement) {
+        console.log('[Screenshot Monitor] No video element found, stream may have ended. Stopping monitoring...');
+        stopScreenshotMonitoring();
+        return;
+      }
+      
       // Double-check button still exists before taking screenshot
       let buttonExists = false;
       for (const selector of BID_SELECTORS) {
@@ -316,6 +324,14 @@ function startScreenshotMonitoring() {
   
   function checkForBidButtons() {
     if (!window._screenshotMonitorRunning) return;
+    
+    // Check if video element still exists (stream still active)
+    const videoElement = document.querySelector('video');
+    if (!videoElement) {
+      console.log('[Screenshot Monitor] No video element found, stream has ended. Stopping monitoring...');
+      stopScreenshotMonitoring();
+      return;
+    }
     
     let buttonExists = false;
     let foundButton = null;
