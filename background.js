@@ -36,8 +36,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleScreenshot(tabId, triggerType = 'auto', productNumber = 'unknown') {
   try {
-    // Capture the visible tab
-    const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+    // Inject the html2canvas library first
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['html2canvas.min.js']
+    });
+    
+    // Then inject the canvas screenshot script
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['screenshot-canvas.js']
+    });
+    
+    // Execute the canvas screenshot function
+    const result = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (productNum) => {
+        return window.takeCanvasScreenshot(productNum);
+      },
+      args: [productNumber]
+    });
+    
+    const screenshotResult = result[0]?.result;
+    
+    if (!screenshotResult || !screenshotResult.success) {
+      throw new Error(screenshotResult?.error || 'Canvas screenshot failed');
+    }
+    
+    const dataUrl = screenshotResult.dataUrl;
     
     // Increment counter
     screenshotCounter++;
@@ -64,24 +90,65 @@ async function handleScreenshot(tabId, triggerType = 'auto', productNumber = 'un
       saveAs: false
     });
     
-    // Show notification
+    // Show notification with additional info
+    const overlayInfo = screenshotResult.hasOverlay ? ' (with overlay)' : ' (video only)';
     chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icon48.png',
-      title: 'Screenshot Taken',
-      message: `Screenshot saved: Product #${productNumber}`
+      title: 'Canvas Screenshot Taken',
+      message: `Screenshot saved: Product #${productNumber}${overlayInfo}`
     });
     
-    console.log(`[Screenshot] Saved: ${filename}`);
+    console.log(`[Canvas Screenshot] Saved: ${filename} - ${screenshotResult.width}x${screenshotResult.height}${overlayInfo}`);
     
   } catch (error) {
-    console.error('[Screenshot] Error:', error);
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icon48.png',
-      title: 'Screenshot Failed',
-      message: 'Failed to take screenshot: ' + error.message
-    });
+    console.error('[Canvas Screenshot] Error:', error);
+    
+    // Fallback to traditional screenshot if canvas method fails
+    console.log('[Canvas Screenshot] Falling back to traditional screenshot method...');
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+      
+      // Increment counter
+      screenshotCounter++;
+      chrome.storage.local.set({ screenshotCounter });
+      
+      // Generate filename
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      
+      const currentDateTime = `${year}${month}${day}-${hours}${minutes}${seconds}`;
+      const filename = `${currentDateTime}-product-${productNumber}.png`;
+      
+      await chrome.downloads.download({
+        url: dataUrl,
+        filename: filename,
+        saveAs: false
+      });
+      
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icon48.png',
+        title: 'Screenshot Taken (Fallback)',
+        message: `Screenshot saved: Product #${productNumber} (fallback method)`
+      });
+      
+      console.log(`[Screenshot] Fallback saved: ${filename}`);
+      
+    } catch (fallbackError) {
+      console.error('[Screenshot] Fallback also failed:', fallbackError);
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icon48.png',
+        title: 'Screenshot Failed',
+        message: 'Both canvas and fallback methods failed: ' + error.message
+      });
+    }
   }
 }
 
