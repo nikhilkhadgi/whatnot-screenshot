@@ -51,33 +51,25 @@ async function takeCanvasScreenshot(productNumber = 'unknown') {
         }
 
         // --- Step 3: Find the HTML overlay element ---
-        let overlayElement = document.getElementById('bottom-section-stream-container');
-
+        let overlayElement = null;
+        
+        console.log('[Canvas Screenshot] Searching for product name element...');
+        
+        // Look for the pinned_product element and find the product title
+        const pinnedProductElement = document.querySelector('div[data-cy="pinned_product"]');
+        if (pinnedProductElement) {
+            console.log('[Canvas Screenshot] Found pinned_product element');
+            
+            // Find the element with font-weight: 600 which contains the product title
+            const productNameElement = pinnedProductElement.querySelector('div[style*="font-weight: 600"]');
+            if (productNameElement && productNameElement.textContent) {
+                console.log(`[Canvas Screenshot] Found product name element: ${productNameElement.textContent.trim()}`);
+                overlayElement = productNameElement;
+            }
+        }
+        
         if (!overlayElement) {
-            console.warn("[Canvas Screenshot] The element with ID 'bottom-section-stream-container' was not found. Looking for alternative overlay elements...");
-            
-            // Try alternative selectors for Whatnot page elements
-            const alternativeSelectors = [
-                '[data-cy="pinned_product"]',
-                '.chat-container',
-                '.bottom-section',
-                '.stream-overlay',
-                '.auction-info'
-            ];
-            
-            for (const selector of alternativeSelectors) {
-                overlayElement = document.querySelector(selector);
-                if (overlayElement) {
-                    console.log(`[Canvas Screenshot] Using alternative overlay element: ${selector}`);
-                    break;
-                }
-            }
-            
-            if (!overlayElement) {
-                console.warn("[Canvas Screenshot] No suitable overlay element found. Taking screenshot without overlay.");
-            }
-        } else {
-            console.log("[Canvas Screenshot] Using overlay element:", overlayElement);
+            console.warn("[Canvas Screenshot] Product name element not found. Taking screenshot without overlay.");
         }
 
         // --- Step 4: Capture the video frame onto a canvas ---
@@ -89,118 +81,82 @@ async function takeCanvasScreenshot(productNumber = 'unknown') {
         videoCtx.drawImage(video, 0, 0, videoCanvas.width, videoCanvas.height);
         console.log('[Canvas Screenshot] Video frame drawn to canvas.');
 
-        // --- Step 5: Render the HTML overlay element (if found) ---
-        let overlayRenderedCanvas = null;
+        // --- Step 5: Extract text content and create custom overlay ---
+        let overlayText = null;
         if (overlayElement) {
-            console.log('[Canvas Screenshot] Rendering overlay element with html2canvas...');
-            try {
-                overlayRenderedCanvas = await html2canvas(overlayElement, {
-                    backgroundColor: null,     // Makes background transparent
-                    useCORS: false,           // Disable CORS to avoid blocked resources
-                    allowTaint: true,         // Allow cross-origin content to taint canvas
-                    logging: false,           // Reduce html2canvas console output
-                    scale: 1,                 // Maintain original scale
-                    foreignObjectRendering: false, // Disable foreign object rendering (CSP friendly)
-                    imageTimeout: 1000,       // Short timeout for images
-                    proxy: null,              // Disable proxy usage
-                    removeContainer: true,    // Clean up temporary containers
-                    width: Math.min(overlayElement.offsetWidth || 500, 500),  // Limit width
-                    height: Math.min(overlayElement.offsetHeight || 300, 300), // Limit height
-                    ignoreElements: (element) => {
-                        const tagName = element.tagName.toLowerCase();
-                        
-                        // Skip problematic elements that might cause CSP issues
-                        if (tagName === 'script' || tagName === 'style' || tagName === 'link') {
-                            return true;
-                        }
-                        
-                        // Skip images from external domains
-                        if (tagName === 'img') {
-                            const src = element.src || '';
-                            if (src.includes('images.whatnot.com') || 
-                                src.includes('cdn.') || 
-                                src.includes('amazonaws.com') ||
-                                src.startsWith('data:') === false) {
-                                console.log('[Canvas Screenshot] Skipping external image:', src);
-                                return true;
-                            }
-                        }
-                        
-                        // Skip video elements
-                        if (tagName === 'video' || tagName === 'iframe' || tagName === 'embed') {
-                            return true;
-                        }
-                        
-                        return false;
-                    }
-                });
-                console.log('[Canvas Screenshot] Overlay element successfully rendered by html2canvas.');
-            } catch (error) {
-                console.error("[Canvas Screenshot] Error rendering overlay with html2canvas:", error);
-                console.warn("[Canvas Screenshot] Trying minimal fallback configuration...");
-                
-                // Try a minimal fallback configuration that avoids most CSP issues
-                try {
-                    // Create a simplified clone of the element with just text content
-                    const clonedElement = overlayElement.cloneNode(true);
-                    
-                    // Remove all potentially problematic elements from the clone
-                    const problematicSelectors = ['img', 'video', 'script', 'style', 'link', 'iframe', 'embed'];
-                    problematicSelectors.forEach(selector => {
-                        const elements = clonedElement.querySelectorAll(selector);
-                        elements.forEach(el => el.remove());
-                    });
-                    
-                    // Temporarily append to body for rendering
-                    clonedElement.style.position = 'absolute';
-                    clonedElement.style.left = '-9999px';
-                    clonedElement.style.top = '-9999px';
-                    document.body.appendChild(clonedElement);
-                    
-                    overlayRenderedCanvas = await html2canvas(clonedElement, {
-                        backgroundColor: null,
-                        useCORS: false,
-                        allowTaint: true,
-                        logging: false,
-                        scale: 1,
-                        foreignObjectRendering: false,
-                        imageTimeout: 500,
-                        proxy: null,
-                        removeContainer: true,
-                        width: Math.min(overlayElement.offsetWidth || 300, 300),
-                        height: Math.min(overlayElement.offsetHeight || 200, 200),
-                        ignoreElements: () => false // Don't ignore anything in the cleaned clone
-                    });
-                    
-                    // Remove the temporary clone
-                    document.body.removeChild(clonedElement);
-                    
-                    console.log('[Canvas Screenshot] Overlay rendered with minimal fallback configuration.');
-                } catch (fallbackError) {
-                    console.error("[Canvas Screenshot] Minimal fallback rendering also failed:", fallbackError);
-                    console.warn("[Canvas Screenshot] Continuing without overlay...");
-                    overlayRenderedCanvas = null;
-                }
+            console.log('[Canvas Screenshot] Extracting text from overlay element...');
+            
+            // Extract the text content from the element
+            const fullText = overlayElement.textContent.trim();
+            console.log(`[Canvas Screenshot] Full extracted text: "${fullText}"`);
+            
+            // Extract only the number part (e.g., "#455" from "As is no cancellations #455")
+            const numberMatch = fullText.match(/#\d+/);
+            if (numberMatch) {
+                overlayText = numberMatch[0];
+                console.log(`[Canvas Screenshot] Extracted number only: "${overlayText}"`);
+            } else {
+                console.log(`[Canvas Screenshot] No number found in text, using full text: "${fullText}"`);
+                overlayText = fullText;
             }
         }
 
-        // --- Step 6: Composite overlay onto video canvas (if overlay exists) ---
-        if (overlayRenderedCanvas) {
-            console.log('[Canvas Screenshot] Compositing overlay onto video frame (at bottom)...');
-
-            const margin = 20; // Pixels from bottom and side edges of the video frame
-
-            // Calculate Y position: videoCanvas height - overlay canvas height - margin
-            const overlayY = Math.max(0, videoCanvas.height - overlayRenderedCanvas.height - margin);
-
-            // Calculate X position: margin from the left
+        // --- Step 6: Draw custom text overlay directly on canvas ---
+        if (overlayText) {
+            console.log('[Canvas Screenshot] Drawing custom text overlay on canvas...');
+            
+            // Set up text styling
+            const fontSize = Math.max(24, Math.floor(videoCanvas.width / 40)); // Responsive font size
+            const fontFamily = 'Arial, sans-serif';
+            const textColor = '#FFFFFF';
+            const backgroundColor = 'rgba(0, 0, 0, 0.8)';
+            const padding = 16;
+            const borderRadius = 8;
+            const margin = 30;
+            
+            // Configure text rendering
+            videoCtx.font = `bold ${fontSize}px ${fontFamily}`;
+            videoCtx.textAlign = 'left';
+            videoCtx.textBaseline = 'top';
+            
+            // Measure text dimensions
+            const textMetrics = videoCtx.measureText(overlayText);
+            const textWidth = textMetrics.width;
+            const textHeight = fontSize;
+            
+            // Calculate overlay dimensions and position
+            const overlayWidth = textWidth + (padding * 2);
+            const overlayHeight = textHeight + (padding * 2);
             const overlayX = margin;
-
-            // Optional: Center horizontally at the bottom
-            // const overlayX = Math.max(0, (videoCanvas.width / 2) - (overlayRenderedCanvas.width / 2));
-
-            videoCtx.drawImage(overlayRenderedCanvas, overlayX, overlayY);
-            console.log('[Canvas Screenshot] Overlay composited onto video canvas.');
+            const overlayY = videoCanvas.height - overlayHeight - margin;
+            
+            // Draw background rectangle with rounded corners
+            videoCtx.fillStyle = backgroundColor;
+            videoCtx.beginPath();
+            
+            // Use roundRect if available, otherwise draw regular rectangle
+            if (typeof videoCtx.roundRect === 'function') {
+                videoCtx.roundRect(overlayX, overlayY, overlayWidth, overlayHeight, borderRadius);
+            } else {
+                // Fallback to regular rectangle
+                videoCtx.rect(overlayX, overlayY, overlayWidth, overlayHeight);
+            }
+            videoCtx.fill();
+            
+            // Draw border
+            videoCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            videoCtx.lineWidth = 2;
+            videoCtx.stroke();
+            
+            // Draw text shadow for better readability
+            videoCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            videoCtx.fillText(overlayText, overlayX + padding + 2, overlayY + padding + 2);
+            
+            // Draw main text
+            videoCtx.fillStyle = textColor;
+            videoCtx.fillText(overlayText, overlayX + padding, overlayY + padding);
+            
+            console.log(`[Canvas Screenshot] Custom text overlay drawn: "${overlayText}" at (${overlayX}, ${overlayY})`);
         }
 
         // --- Step 7: Get the final combined image as a Data URL ---
@@ -213,7 +169,7 @@ async function takeCanvasScreenshot(productNumber = 'unknown') {
             dataUrl: finalImageDataURL,
             width: videoCanvas.width,
             height: videoCanvas.height,
-            hasOverlay: overlayRenderedCanvas !== null
+            hasOverlay: overlayText !== null
         };
 
     } catch (error) {
