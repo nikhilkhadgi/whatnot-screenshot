@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Whatnot Auction Screenshot Extension",
   "description": "Automatically takes screenshots when bid buttons become available on Whatnot auctions.",
-  "version": "1.2",
+  "version": "1.3",
   "permissions": ["scripting", "activeTab", "storage", "downloads", "notifications"],
   "host_permissions": ["https://*.whatnot.com/*"],
   "action": {
@@ -17,6 +17,13 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://*.whatnot.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_end"
+    }
+  ],
   "web_accessible_resources": [
     {
       "resources": ["html2canvas.min.js", "screenshot-canvas.js"],

@@ -144,7 +144,8 @@ manualScreenshotBtn.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({ 
       type: "takeScreenshot", 
       triggerType: "manual",
-      productNumber: productNumber
+      productNumber: productNumber,
+      tabId: tab.id  // Include tab ID in the message
     });
     
     // Update UI
