@@ -1,4 +1,37 @@
 // Content script for canvas-based screenshot with HTML overlay
+
+/**
+ * Retrieves the streamer/seller name from the page title or Twitter meta tag.
+ * This is often the actual person/entity hosting the livestream.
+ *
+ * @returns {string|null} The streamer name if found, otherwise null.
+ */
+function getStreamerNameFromHtml() {
+    // Try to get from the <title> tag first
+    const titleElement = document.querySelector('title');
+    if (titleElement) {
+        const titleText = titleElement.textContent;
+        const match = titleText.match(/@([^']+)'s Livestream on Whatnot/);
+        if (match && match[1]) {
+            return match[1]; // Returns "madsluxe"
+        }
+    }
+
+    // If not found in title, try the twitter:title meta tag
+    const twitterTitleMeta = document.querySelector('meta[name="twitter:title"]');
+    if (twitterTitleMeta) {
+        const content = twitterTitleMeta.getAttribute('content');
+        if (content) {
+            const match = content.match(/@([^']+)'s Livestream on Whatnot/);
+            if (match && match[1]) {
+                return match[1]; // Returns "madsluxe"
+            }
+        }
+    }
+
+    return null; // Return null if not found
+}
+
 async function takeCanvasScreenshot(productNumber = 'unknown') {
     try {
         console.log('[Canvas Screenshot] Starting canvas-based screenshot process...');
@@ -163,13 +196,23 @@ async function takeCanvasScreenshot(productNumber = 'unknown') {
         const finalImageDataURL = videoCanvas.toDataURL('image/png');
         console.log('[Canvas Screenshot] Final combined image Data URL generated (PNG).');
 
-        // --- Step 8: Return the data URL for download ---
+        // --- Step 8: Get streamer name for filename ---
+        const streamerName = getStreamerNameFromHtml();
+        if (streamerName) {
+            console.log(`[Canvas Screenshot] Streamer/Seller Name: ${streamerName}`);
+        } else {
+            console.log('[Canvas Screenshot] Streamer/Seller name not found in HTML title/meta tags.');
+        }
+
+        // --- Step 9: Return the data URL for download ---
         return {
             success: true,
             dataUrl: finalImageDataURL,
             width: videoCanvas.width,
             height: videoCanvas.height,
-            hasOverlay: overlayText !== null
+            hasOverlay: overlayText !== null,
+            streamerName: streamerName,
+            itemNumber: overlayText
         };
 
     } catch (error) {

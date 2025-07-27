@@ -125,7 +125,7 @@ async function handleScreenshot(tabId, triggerType = 'auto', productNumber = 'un
     // Save counter to storage
     chrome.storage.local.set({ screenshotCounter });
     
-    // Generate filename with current datetime and product number
+    // Generate filename with streamer name, item number, and datetime
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -135,7 +135,30 @@ async function handleScreenshot(tabId, triggerType = 'auto', productNumber = 'un
     const seconds = String(now.getSeconds()).padStart(2, '0');
     
     const currentDateTime = `${year}${month}${day}-${hours}${minutes}${seconds}`;
-    const filename = `${currentDateTime}-product-${productNumber}.png`;
+    
+    // Build filename with streamer name and item number
+    let filename;
+    const streamerName = screenshotResult.streamerName;
+    const itemNumber = screenshotResult.itemNumber;
+    
+    // Extract just the number from itemNumber (remove the # if present)
+    const cleanItemNumber = itemNumber ? itemNumber.replace('#', '') : null;
+    
+    if (streamerName && cleanItemNumber) {
+      // Format: "beautyseller-20250726-174822-product-548.png"
+      filename = `${streamerName}-${currentDateTime}-product-${cleanItemNumber}.png`;
+    } else if (streamerName) {
+      // Format: "beautyseller-20250726-174822-product-unknown.png"
+      filename = `${streamerName}-${currentDateTime}-product-${productNumber}.png`;
+    } else if (cleanItemNumber) {
+      // Format: "20250726-174822-product-548.png"
+      filename = `${currentDateTime}-product-${cleanItemNumber}.png`;
+    } else {
+      // Fallback to original format
+      filename = `${currentDateTime}-product-${productNumber}.png`;
+    }
+    
+    console.log(`[Canvas Screenshot] Generated filename: ${filename}`);
     
     // Download the screenshot
     await chrome.downloads.download({
@@ -146,14 +169,17 @@ async function handleScreenshot(tabId, triggerType = 'auto', productNumber = 'un
     
     // Show notification with additional info
     const overlayInfo = screenshotResult.hasOverlay ? ' (with overlay)' : ' (video only)';
+    const displayName = itemNumber || `Product #${productNumber}`;
+    const sellerInfo = streamerName ? ` by ${streamerName}` : '';
+    
     chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icon48.png',
       title: 'Canvas Screenshot Taken',
-      message: `Screenshot saved: Product #${productNumber}${overlayInfo}`
+      message: `Screenshot saved: ${displayName}${sellerInfo}${overlayInfo}`
     });
     
-    console.log(`[Canvas Screenshot] Saved: ${filename} - ${screenshotResult.width}x${screenshotResult.height}${overlayInfo}`);
+    console.log(`[Canvas Screenshot] Saved: ${filename} - ${screenshotResult.width}x${screenshotResult.height}${overlayInfo} - Streamer: ${streamerName || 'unknown'} - Item: ${itemNumber || 'unknown'}`);
     
   } catch (error) {
     console.error('[Canvas Screenshot] Error:', error);
