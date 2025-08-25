@@ -141,18 +141,15 @@ async function handleScreenshot(tabId, triggerType = 'auto', productNumber = 'un
     const streamerName = screenshotResult.streamerName;
     const itemNumber = screenshotResult.itemNumber;
     
-    // Extract just the number from itemNumber (remove the # if present)
-    const cleanItemNumber = itemNumber ? itemNumber.replace('#', '') : null;
-    
-    if (streamerName && cleanItemNumber) {
-      // Format: "beautyseller-20250726-174822-product-548.png"
-      filename = `${streamerName}-${currentDateTime}-product-${cleanItemNumber}.png`;
+    if (streamerName && itemNumber) {
+      // Format: "beautybedazzled-#32-20250824-191421.png"
+      filename = `${streamerName}-${itemNumber}-${currentDateTime}.png`;
     } else if (streamerName) {
-      // Format: "beautyseller-20250726-174822-product-unknown.png"
-      filename = `${streamerName}-${currentDateTime}-product-${productNumber}.png`;
-    } else if (cleanItemNumber) {
-      // Format: "20250726-174822-product-548.png"
-      filename = `${currentDateTime}-product-${cleanItemNumber}.png`;
+      // Format: "beautybedazzled-product-unknown-20250824-191421.png"
+      filename = `${streamerName}-product-${productNumber}-${currentDateTime}.png`;
+    } else if (itemNumber) {
+      // Format: "#32-20250824-191421.png"
+      filename = `${itemNumber}-${currentDateTime}.png`;
     } else {
       // Fallback to original format
       filename = `${currentDateTime}-product-${productNumber}.png`;
